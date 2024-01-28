@@ -6,6 +6,7 @@ use sha2::Sha256;
 use std::task::{Context, Poll};
 use tower::Service;
 
+/// Middleware that authorizes all requests using the X-Hub-Signature-256 header.
 #[derive(Clone)]
 pub struct ValidateGitHubWebhook<S> {
     inner: S,
