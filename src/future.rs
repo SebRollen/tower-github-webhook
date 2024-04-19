@@ -6,7 +6,7 @@ use pin_project::pin_project;
 use sha2::Sha256;
 use std::future::Future;
 use std::pin::Pin;
-use std::task::{ready, Context, Poll};
+use std::task::{Context, Poll};
 use tower::Service;
 
 #[pin_project]
@@ -98,7 +98,14 @@ where
                 if body.is_end_stream() {
                     curr_state.set(ValidateGitHubWebhookFutureState::ValidateSignature);
                 } else {
-                    let frame = ready!(Pin::new(req.body_mut()).poll_frame(cx));
+                    let frame = match Pin::new(req.body_mut()).poll_frame(cx) {
+                        Poll::Pending => {
+                            *this.req = Some(req);
+                            return Poll::Pending;
+                        }
+                        Poll::Ready(frame) => frame,
+                    };
+
                     if let Some(Ok(frame)) = frame {
                         if let Ok(data) = frame.into_data() {
                             let mut hmac = this.hmac.take().unwrap();
