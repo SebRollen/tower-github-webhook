@@ -1,15 +1,27 @@
+//! # Example
+//!
+//! This is a simple example of how to implement a webhook handler to handle incoming GitHub
+//! events.
+//! It uses `octocrab` for definitions of the various webhooks that are sent from GitHub, `axum` as
+//! a server and, of course, `tower-github-webhook` to handle authenticatition of the incoming
+//! webhook.
+//!
+//! The `Event` struct has implements the `FromRequest` axum trait so that it can be used as a
+//! parameter in the axum handler.
 use axum::async_trait;
 use axum::body::Bytes;
 use axum::debug_handler;
 use axum::extract::{FromRequest, Request};
 use axum::response::{IntoResponse, Response};
-use axum::{extract::Json, routing::post, Router};
+use axum::{routing::post, Router};
 use octocrab::models::{
     webhook_events::{WebhookEvent, WebhookEventPayload, WebhookEventType},
     Author, Repository,
 };
 use serde::{Deserialize, Serialize};
 use tower_github_webhook::ValidateGitHubWebhookLayer;
+
+const WEBHOOK_SECRET: &'static str = "my little secret";
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Event {
@@ -74,11 +86,11 @@ fn app() -> Router {
     // Build route service
     Router::new().route(
         "/github/events",
-        post(print_body).layer(ValidateGitHubWebhookLayer::new("123")),
+        post(print_body).layer(ValidateGitHubWebhookLayer::new(WEBHOOK_SECRET)),
     )
 }
 
 #[debug_handler]
-async fn print_body(Json(event): Json<Event>) {
+async fn print_body(event: Event) {
     println!("{:#?}", event);
 }

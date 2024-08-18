@@ -1,10 +1,12 @@
-use crate::future::ValidateGitHubWebhookFuture;
+use crate::future::Future;
+use bytes::Bytes;
 use hmac::{Hmac, Mac};
 use http::{Request, Response};
 use http_body::Body;
+use http_body_util::{Either, Empty, Full};
 use sha2::Sha256;
 use std::task::{Context, Poll};
-use tower::Service;
+use tower_service::Service;
 
 /// Middleware that authorizes all requests using the X-Hub-Signature-256 header.
 #[derive(Clone)]
@@ -23,13 +25,12 @@ impl<S> ValidateGitHubWebhook<S> {
 
 impl<S, ReqBody, ResBody> Service<Request<ReqBody>> for ValidateGitHubWebhook<S>
 where
-    S: Service<Request<ReqBody>, Response = Response<ResBody>> + Clone,
-    ReqBody: Body + Unpin,
-    ResBody: Body + Default,
+    S: Service<Request<Full<Bytes>>, Response = Response<ResBody>> + Clone,
+    ReqBody: Body,
 {
-    type Response = Response<ResBody>;
+    type Response = Response<Either<ResBody, Empty<Bytes>>>;
     type Error = S::Error;
-    type Future = ValidateGitHubWebhookFuture<S, ReqBody, ResBody>;
+    type Future = Future<S, ReqBody, ResBody>;
 
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), S::Error>> {
         self.inner.poll_ready(cx)
@@ -38,6 +39,6 @@ where
     fn call(&mut self, req: Request<ReqBody>) -> Self::Future {
         let inner = self.inner.clone();
         let hmac = self.hmac.clone();
-        ValidateGitHubWebhookFuture::new(req, hmac, inner)
+        Future::new(req, hmac, inner)
     }
 }
