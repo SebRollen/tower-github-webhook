@@ -15,7 +15,7 @@ pin_project! {
   pub struct Future<S: Service<Request<Full<Bytes>>, Response = Response<ResBody>>, ReqBody, ResBody> {
       // We use Option<X> here and for `hmac` to make it easy to move these fields out of the future
       // later.
-      parts: Option<Parts>,
+      parts: Parts,
       buffer: BytesMut,
       inner: S,
       hmac: Option<Hmac<Sha256>>,
@@ -36,7 +36,7 @@ where
         let body_size = body.size_hint().lower().try_into().unwrap_or(0);
         let buffer = BytesMut::with_capacity(body_size);
         Self {
-            parts: Some(parts),
+            parts,
             body,
             buffer,
             inner,
@@ -79,11 +79,7 @@ where
         let mut curr_state = this.state;
         match curr_state.as_mut().project() {
             StateProj::ExtractSignature => {
-                let parts = this
-                    .parts
-                    .take()
-                    .expect("Parts is either reset at the end of this method, or we bail");
-                let Some(signature) = parts.headers.get("x-hub-signature-256") else {
+                let Some(signature) = this.parts.headers.get("x-hub-signature-256") else {
                     return bail("Missing X-HUB-SIGNATURE-256 header");
                 };
                 let Some(signature) = signature.as_bytes().splitn(2, |x| x == &b'=').nth(1) else {
@@ -92,7 +88,6 @@ where
                 let Ok(signature) = hex::decode(signature) else {
                     return bail("Invalid header format");
                 };
-                *this.parts = Some(parts);
                 curr_state.set(State::ExtractBody { signature });
                 rewake(cx)
             }
@@ -104,7 +99,8 @@ where
                         .take()
                         .expect("HMAC is only moved out of the option once, here");
                     if hmac.verify_slice(signature).is_ok() {
-                        let parts = this.parts.take().unwrap();
+                        let (new_parts, ()) = Request::default().into_parts();
+                        let parts = std::mem::replace(this.parts, new_parts);
                         let body = Full::new(this.buffer.split().freeze());
                         let req = Request::from_parts(parts, body);
                         let fut = this.inner.call(req);
